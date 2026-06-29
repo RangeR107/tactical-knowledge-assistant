@@ -1,0 +1,104 @@
+TACTICAL OPERATIONS OVERVIEW
+=============================
+
+1. INTRODUCTION TO TACTICAL OPERATIONS
+--------------------------------------
+Tactical operations refer to the coordinated execution of specific, short-term activities designed to achieve defined objectives within a broader strategic plan. Unlike strategic planning, which focuses on long-term goals, tactical operations are concerned with immediate actions and resource deployment.
+
+Key principles of tactical operations:
+- Clarity of mission objectives
+- Effective resource allocation
+- Real-time decision-making
+- Coordination among team members
+- Adaptability to changing conditions
+
+2. MISSION PLANNING
+-------------------
+Effective mission planning is the cornerstone of any successful tactical operation. It involves:
+
+2.1 Objective Definition
+Before any operation begins, commanders must clearly define:
+- Primary objectives (must-achieve goals)
+- Secondary objectives (desirable outcomes)
+- Constraints and limitations
+- Rules of engagement
+
+2.2 Intelligence Gathering
+Intelligence is critical to planning. Sources include:
+- Reconnaissance reports
+- Signals intelligence (SIGINT)
+- Human intelligence (HUMINT)
+- Open-source intelligence (OSINT)
+- Imagery intelligence (IMINT)
+
+2.3 Resource Assessment
+Resources must be catalogued before deployment:
+- Personnel availability and skill sets
+- Equipment readiness status
+- Logistical supply chain
+- Communication systems
+- Medical support capabilities
+
+3. COMMUNICATION PROTOCOLS
+---------------------------
+Effective communication is the backbone of tactical operations.
+
+3.1 Radio Communication
+- Use standardised call signs
+- Employ brevity codes to reduce transmission time
+- Maintain radio silence when operationally necessary
+- Always confirm receipt of critical messages
+
+3.2 Reporting Structure
+Reports must flow through the proper chain of command:
+- Situation reports (SITREPs) every hour or as conditions change
+- Contact reports immediately upon enemy contact
+- Logistics reports at predetermined intervals
+- Casualty reports following any engagement
+
+4. FORCE PROTECTION
+-------------------
+Protecting personnel and assets is paramount.
+
+4.1 Physical Security Measures
+- Establish perimeter security at all locations
+- Implement access control procedures
+- Conduct regular security sweeps
+- Maintain a Quick Reaction Force (QRF) on standby
+
+4.2 Information Security
+- Need-to-know basis for classified information
+- Secure communications at all times
+- Operational security (OPSEC) awareness training
+- Regular security audits
+
+5. LOGISTICS AND SUSTAINMENT
+-----------------------------
+Logistics ensures sustained operational capability.
+
+5.1 Supply Chain Management
+- Pre-positioning of critical supplies
+- Resupply scheduling and routes
+- Emergency resupply procedures
+- Equipment maintenance schedules
+
+5.2 Medical Evacuation (MEDEVAC)
+- Pre-planned MEDEVAC routes
+- Landing zone (LZ) identification and preparation
+- Casualty collection points
+- Medical treatment facilities locations
+
+6. AFTER-ACTION REVIEW (AAR)
+-----------------------------
+Every operation must conclude with a thorough AAR:
+- What was the mission objective?
+- What actually happened?
+- What went well?
+- What needs improvement?
+- What actions will be taken to improve future performance?
+
+The AAR should involve all personnel who participated in the operation, creating a learning culture that drives continuous improvement.
+
+7. CONCLUSION
+-------------
+Tactical excellence is achieved through rigorous planning, effective communication, disciplined execution, and honest evaluation. These principles, applied consistently, form the foundation of mission success.
