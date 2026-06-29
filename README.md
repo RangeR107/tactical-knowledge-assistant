@@ -6,15 +6,8 @@ A **fully offline, production-quality AI assistant** built with Python, LangChai
 
 ## 📸 Screenshots
 
-> *(Add screenshots after running the app)*
+<img width="2864" height="1518" alt="image" src="https://github.com/user-attachments/assets/86aac634-3b39-4ff4-b877-188a2db0a7de" />
 
-| Feature | Screenshot |
-|---------|-----------|
-| Main chat interface | `docs/screenshots/chat.png` |
-| Sidebar & KB controls | `docs/screenshots/sidebar.png` |
-| Retrieved context | `docs/screenshots/context.png` |
-
----
 
 ## 🏗️ Architecture
 
@@ -253,6 +246,5 @@ Alternative models (change in `config.yaml`):
 
 This project is created for educational and internship demonstration purposes.
 
----
 
 *Built with ❤️ using LangChain, Streamlit, FAISS, SentenceTransformers, and Ollama*
