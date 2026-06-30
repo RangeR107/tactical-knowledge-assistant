@@ -1,6 +1,4 @@
-"""Sidebar UI components for document management and settings."""
-
-from pathlib import Path
+"""Sidebar UI components."""
 
 import streamlit as st
 
@@ -18,73 +16,55 @@ def render_sidebar(state: dict) -> None:
         # ── Brand ──────────────────────────────────────────────────────────
         st.markdown(
             """
-            <div style="text-align:center; padding: 0.5rem 0 1rem 0;">
-                <span style="font-size:2rem;">🎯</span>
-                <div style="color:#38bdf8; font-weight:700; font-size:1rem; letter-spacing:0.05em;">
-                    TACTICAL KA
-                </div>
-                <div style="color:#475569; font-size:0.7rem;">v1.0.0 • Fully Offline</div>
+            <div style="text-align:center; padding:0.5rem 0 1rem;">
+                <div style="font-size:2.2rem;">🎯</div>
+                <div style="color:#38bdf8;font-weight:700;font-size:1rem;letter-spacing:0.06em;">TACTICAL KA</div>
+                <div style="color:#475569;font-size:0.68rem;margin-top:0.1rem;">v1.0.0 &nbsp;·&nbsp; Fully Offline</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
         st.divider()
-
-        # ── System Status ──────────────────────────────────────────────────
-        st.markdown("### 🔌 System Status")
+        st.markdown("### 🔌 Status")
         _render_status(state)
 
         st.divider()
-
-        # ── Model Selection ────────────────────────────────────────────────
-        st.markdown("### 🤖 Model Selection")
+        st.markdown("### 🤖 Model")
         _render_model_selector(state)
 
         st.divider()
-
-        # ── Vector DB & Embedding ──────────────────────────────────────────
         st.markdown("### 🗃️ Vector DB & Embeddings")
         _render_vectordb_selector(state)
 
         st.divider()
-
-        # ── Document Upload ────────────────────────────────────────────────
         st.markdown("### 📁 Upload Documents")
         _render_upload(state)
 
         st.divider()
-
-        # ── Knowledge Base Controls ────────────────────────────────────────
         st.markdown("### 🗄️ Knowledge Base")
         _render_kb_controls(state)
 
-        st.divider()
+        # Indexed documents list
+        _render_indexed_docs(state)
 
-        # ── Statistics ────────────────────────────────────────────────────
+        st.divider()
         st.markdown("### 📊 Statistics")
         _render_stats(state)
 
         st.divider()
-
-        # ── Settings ──────────────────────────────────────────────────────
         st.markdown("### ⚙️ Settings")
         _render_settings(state)
 
         st.divider()
-
-        # ── Logs ──────────────────────────────────────────────────────────
         with st.expander("📋 Application Logs", expanded=False):
             log_text = read_log_tail(config.logging_cfg["file"], n_lines=50)
-            st.markdown(
-                f'<div class="log-viewer">{log_text}</div>',
-                unsafe_allow_html=True,
-            )
-            if st.button("🔄 Refresh Logs", use_container_width=True):
+            st.markdown(f'<div class="log-viewer">{log_text}</div>', unsafe_allow_html=True)
+            if st.button("🔄 Refresh", use_container_width=True):
                 st.rerun()
 
 
-# ── Private helpers ──────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _render_status(state: dict) -> None:
     from app.llm import is_ollama_running, is_model_available
@@ -94,7 +74,7 @@ def _render_status(state: dict) -> None:
     model_ok = is_model_available(model_name) if ollama_ok else False
     kb_ready = state.get("vector_store") is not None
 
-    def badge(label: str, ok: bool, warn: bool = False) -> str:
+    def badge(label, ok, warn=False):
         cls = "status-online" if ok else ("status-warning" if warn else "status-offline")
         icon = "●" if ok else ("◐" if warn else "○")
         return f'<span class="status-badge {cls}">{icon} {label}</span>&nbsp;'
@@ -107,9 +87,9 @@ def _render_status(state: dict) -> None:
     )
 
     if not ollama_ok:
-        st.warning("Ollama server not running. Start it with: `ollama serve`")
+        st.warning("Ollama not running. Run: `ollama serve`")
     elif not model_ok:
-        st.warning(f"Model `{model_name}` not found. Run: `ollama pull {model_name}`")
+        st.warning(f"`{model_name}` not found. Run: `ollama pull {model_name}`")
 
 
 def _render_model_selector(state: dict) -> None:
@@ -117,12 +97,11 @@ def _render_model_selector(state: dict) -> None:
     available = get_available_models()
 
     if not available:
-        st.warning("No Ollama models found. Pull one first.")
-        st.caption("e.g. `ollama pull qwen2.5:3b`")
+        st.warning("No Ollama models found.")
+        st.caption("Pull one: `ollama pull qwen2.5:3b`")
         return
 
     current = settings.get("model", config.llm["model"])
-    # Default to first available if current not found
     if current not in available:
         current = available[0]
 
@@ -135,21 +114,15 @@ def _render_model_selector(state: dict) -> None:
 
     if selected != settings.get("model"):
         settings["model"] = selected
-        # Invalidate the chain so it's rebuilt with the new model
-        state["rag_chain"] = None
-        st.caption(f"✅ Model changed to `{selected}` — will apply on next query.")
+        state["rag_chain"] = None  # rebuild on next query
     else:
         settings["model"] = selected
-
-    st.caption(f"Selected: `{selected}`")
 
 
 def _render_vectordb_selector(state: dict) -> None:
     settings = state.setdefault("settings", {})
 
-    # ── Vector DB ──────────────────────────────────────────────────────────
     store_keys = list(AVAILABLE_STORES.keys())
-    store_labels = list(AVAILABLE_STORES.values())
     current_store = settings.get("vector_db", DEFAULT_STORE_TYPE)
     if current_store not in store_keys:
         current_store = DEFAULT_STORE_TYPE
@@ -159,20 +132,15 @@ def _render_vectordb_selector(state: dict) -> None:
         options=store_keys,
         format_func=lambda k: AVAILABLE_STORES[k],
         index=store_keys.index(current_store),
-        help="Choose where to store document embeddings",
     )
-
     if selected_store != settings.get("vector_db"):
         settings["vector_db"] = selected_store
-        # KB was built with a different backend — must rebuild
         if state.get("vector_store") is not None:
             state["vector_store"] = None
             state["rag_chain"] = None
-            st.warning("⚠️ Vector DB changed — please rebuild the Knowledge Base.")
-
+            st.warning("⚠️ Vector DB changed — rebuild the KB.")
     settings["vector_db"] = selected_store
 
-    # ── Embedding Model ────────────────────────────────────────────────────
     emb_keys = list(AVAILABLE_EMBEDDING_MODELS.keys())
     current_emb = settings.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
     if current_emb not in emb_keys:
@@ -183,51 +151,39 @@ def _render_vectordb_selector(state: dict) -> None:
         options=emb_keys,
         format_func=lambda k: AVAILABLE_EMBEDDING_MODELS[k],
         index=emb_keys.index(current_emb),
-        help="Model used to convert text to vectors",
     )
-
     if selected_emb != settings.get("embedding_model"):
         settings["embedding_model"] = selected_emb
         if state.get("vector_store") is not None:
             state["vector_store"] = None
             state["rag_chain"] = None
-            st.warning("⚠️ Embedding model changed — please rebuild the Knowledge Base.")
-
+            st.warning("⚠️ Embedding model changed — rebuild the KB.")
     settings["embedding_model"] = selected_emb
 
 
 def _render_upload(state: dict) -> None:
-    ext_list = ", ".join(sorted(SUPPORTED_EXTENSIONS))
     uploaded_files = st.file_uploader(
-        f"Supported: {ext_list}",
+        f"PDF, DOCX, TXT, MD",
         type=[e.lstrip(".") for e in SUPPORTED_EXTENSIONS],
         accept_multiple_files=True,
         key="file_uploader",
     )
-
     if uploaded_files:
         st.info(f"{len(uploaded_files)} file(s) selected")
         for uf in uploaded_files:
-            size_str = human_readable_size(uf.size)
-            st.markdown(
-                f"<small>📄 **{uf.name}** &nbsp;·&nbsp; {size_str}</small>",
-                unsafe_allow_html=True,
-            )
-        if st.button("📥 Load Selected Files", type="primary", use_container_width=True):
+            st.caption(f"📄 {uf.name} · {human_readable_size(uf.size)}")
+        if st.button("📥 Load Files", type="primary", use_container_width=True):
             _load_uploaded_files(uploaded_files, state)
 
 
-def _load_uploaded_files(uploaded_files: list, state: dict) -> None:
+def _load_uploaded_files(uploaded_files, state: dict) -> None:
     pending = state.setdefault("pending_docs", [])
     loaded_names = state.setdefault("loaded_file_names", set())
     errors = []
-
-    progress = st.progress(0, text="Loading documents…")
-    total = len(uploaded_files)
+    progress = st.progress(0, text="Loading…")
 
     for i, uf in enumerate(uploaded_files):
         if uf.name in loaded_names:
-            st.warning(f"Skipping duplicate: {uf.name}")
             continue
         try:
             docs = load_from_uploaded_file(uf, uf.name)
@@ -236,14 +192,13 @@ def _load_uploaded_files(uploaded_files: list, state: dict) -> None:
         except Exception as exc:
             errors.append(f"{uf.name}: {exc}")
             logger.error(f"Failed to load {uf.name}: {exc}")
-        progress.progress((i + 1) / total, text=f"Loading {uf.name}…")
+        progress.progress((i + 1) / len(uploaded_files), text=f"Loading {uf.name}…")
 
     progress.empty()
     if errors:
-        st.error("Failed to load:\n" + "\n".join(errors))
+        st.error("\n".join(errors))
     else:
-        st.success(f"✅ {len(loaded_names)} file(s) loaded — {len(pending)} page(s) ready")
-
+        st.success(f"✅ {len(loaded_names)} file(s) ready to index")
     state["documents_loaded"] = bool(pending)
 
 
@@ -253,29 +208,29 @@ def _render_kb_controls(state: dict) -> None:
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button(
-            "⚡ Build KB",
-            disabled=not has_pending,
-            type="primary" if has_pending else "secondary",
-            use_container_width=True,
-        ):
+        if st.button("⚡ Build KB", disabled=not has_pending,
+                     type="primary" if has_pending else "secondary",
+                     use_container_width=True):
             state["action"] = "build_kb"
     with col2:
-        if st.button(
-            "🗑️ Reset KB",
-            disabled=not has_store,
-            use_container_width=True,
-        ):
+        if st.button("🗑️ Reset KB", disabled=not has_store, use_container_width=True):
             state["action"] = "reset_kb"
 
     if has_pending:
-        st.caption(f"⏳ {len(state['pending_docs'])} page(s) awaiting indexing")
+        st.caption(f"⏳ {len(state['pending_docs'])} page(s) queued")
 
-    # Show current KB backend
-    if has_store:
-        vdb = state.get("settings", {}).get("vector_db", DEFAULT_STORE_TYPE)
-        emb = state.get("settings", {}).get("embedding_model", DEFAULT_EMBEDDING_MODEL)
-        st.caption(f"KB: **{vdb.upper()}** · `{emb.split('/')[-1]}`")
+
+def _render_indexed_docs(state: dict) -> None:
+    indexed = state.get("indexed_files", [])
+    if not indexed:
+        return
+    st.markdown("**Indexed documents:**")
+    for name in indexed:
+        ext = name.rsplit(".", 1)[-1].upper() if "." in name else "?"
+        st.markdown(
+            f'<div class="indexed-doc"><span class="doc-icon">📄</span>{name} &nbsp;<span style="color:#334155;font-size:0.65rem;">[{ext}]</span></div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _render_stats(state: dict) -> None:
@@ -283,35 +238,27 @@ def _render_stats(state: dict) -> None:
     stats = state.get("kb_stats", {})
     history = state.get("chat_history_obj")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Vectors", stats.get("total_vectors", 0) if store else 0)
-    with col2:
-        st.metric("Documents", len(state.get("loaded_file_names", set())))
+    c1, c2 = st.columns(2)
+    c1.metric("Vectors", stats.get("total_vectors", 0) if store else 0)
+    c2.metric("Documents", len(state.get("indexed_files", [])))
 
-    col3, col4 = st.columns(2)
-    with col3:
-        st.metric("Chat Turns", len(history) if history else 0)
-    with col4:
-        st.metric("Last Latency", f"{state.get('last_latency', 0.0):.1f}s")
+    c3, c4 = st.columns(2)
+    c3.metric("Chat Turns", len(history) if history else 0)
+    c4.metric("Last Latency", f"{state.get('last_latency', 0.0):.1f}s")
 
 
 def _render_settings(state: dict) -> None:
     settings = state.setdefault("settings", {})
 
     settings["top_k"] = st.slider(
-        "Retrieved chunks (top-k)",
-        min_value=1, max_value=10,
+        "Retrieved chunks (top-k)", 1, 10,
         value=settings.get("top_k", config.retrieval["top_k"]),
     )
-
     settings["temperature"] = st.slider(
-        "Temperature",
-        min_value=0.0, max_value=1.0,
+        "Temperature", 0.0, 1.0,
         value=float(settings.get("temperature", config.llm["temperature"])),
         step=0.05,
     )
-
     settings["show_context"] = st.toggle(
         "Show retrieved context",
         value=settings.get("show_context", True),
@@ -320,3 +267,16 @@ def _render_settings(state: dict) -> None:
         "Show source documents",
         value=settings.get("show_sources", True),
     )
+
+    # Export chat
+    history = state.get("chat_history_obj")
+    if history and len(history) > 0:
+        from ui.chat import build_chat_export
+        export_md = build_chat_export(history)
+        st.download_button(
+            "⬇️ Export Chat",
+            data=export_md,
+            file_name="chat_export.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )

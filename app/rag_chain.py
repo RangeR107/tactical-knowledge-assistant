@@ -1,7 +1,7 @@
 """RAG pipeline using LangChain LCEL (LangChain Expression Language)."""
 
 import time
-from typing import Any
+from typing import Any, Generator
 
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
@@ -14,8 +14,6 @@ from app.logger import logger
 from app.retriever import get_retriever
 
 
-# ── Prompt template ─────────────────────────────────────────────────────────
-
 RAG_PROMPT_TEMPLATE = """\
 You are a Tactical Knowledge Assistant. Answer the user's question using ONLY the context provided below.
 
@@ -23,6 +21,7 @@ If the context does not contain enough information to answer the question, respo
 "I don't have enough information in the knowledge base to answer this question."
 
 Do not make up information. Be concise, accurate, and professional.
+Format your answer clearly — use bullet points or numbered lists where appropriate.
 
 Context:
 {context}
@@ -52,8 +51,6 @@ def _format_chat_history(history: list[dict[str, str]]) -> str:
         lines.append(f"Assistant: {turn['assistant']}")
     return "\n".join(lines)
 
-
-# ── RAG Chain ────────────────────────────────────────────────────────────────
 
 class RAGChain:
     """Orchestrates retrieval-augmented generation using LangChain LCEL."""
@@ -95,18 +92,28 @@ class RAGChain:
         question: str,
         chat_history: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
+        """Run the full RAG chain and return the complete answer (non-streaming)."""
         history = chat_history or []
         start = time.perf_counter()
         logger.info(f"RAG query: '{question[:80]}…'")
-
         retrieved_docs = self.retriever.invoke(question)
         answer = self._chain.invoke({"question": question, "chat_history": history})
-
         elapsed = time.perf_counter() - start
         logger.info(f"RAG response generated in {elapsed:.2f}s")
+        return {"answer": answer, "source_documents": retrieved_docs, "latency_seconds": elapsed}
 
-        return {
-            "answer": answer,
-            "source_documents": retrieved_docs,
-            "latency_seconds": elapsed,
-        }
+    def stream(
+        self,
+        question: str,
+        chat_history: list[dict[str, str]] | None = None,
+    ) -> tuple[list[Document], Generator]:
+        """Retrieve docs and return a token stream for progressive display.
+
+        Returns:
+            (retrieved_docs, token_generator) — render docs after streaming.
+        """
+        history = chat_history or []
+        logger.info(f"RAG stream query: '{question[:80]}…'")
+        retrieved_docs = self.retriever.invoke(question)
+        inputs = {"question": question, "chat_history": history}
+        return retrieved_docs, self._chain.stream(inputs)

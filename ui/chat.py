@@ -1,140 +1,134 @@
-"""Chat interface UI components."""
+"""Chat interface UI components using native Streamlit chat primitives."""
+
+from datetime import datetime
 
 import streamlit as st
 
 from app.utils import truncate, unique_sources
 
 
-def render_chat_history(chat_history_obj) -> None:
-    """Render all previous chat turns as styled message bubbles."""
+# ── History renderer ─────────────────────────────────────────────────────────
+
+def render_chat_history(chat_history_obj, settings: dict, last_docs: list, last_latency: float) -> None:
+    """Render all previous chat turns using st.chat_message bubbles.
+
+    Sources and context are shown only under the most recent assistant turn.
+    """
     if not chat_history_obj or len(chat_history_obj) == 0:
-        st.markdown(
-            """
-            <div style="text-align:center; padding:3rem; color:#475569;">
-                <div style="font-size:3rem; margin-bottom:1rem;">💬</div>
-                <div style="font-size:1rem; font-weight:500; color:#64748b;">
-                    Ask a question to get started
-                </div>
-                <div style="font-size:0.8rem; margin-top:0.5rem; color:#475569;">
-                    Upload documents and build the knowledge base first
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
         return
 
-    for turn in chat_history_obj:
-        # User bubble
-        st.markdown(
-            f"""
-            <div class="user-message">
-                <div class="message-label">You</div>
-                {turn.human}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        # Assistant bubble
-        st.markdown(
-            f"""
-            <div class="assistant-message">
-                <div class="message-label">Assistant</div>
-                {turn.assistant.replace(chr(10), "<br>")}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    turns = list(chat_history_obj)
+    for i, turn in enumerate(turns):
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(turn.human)
+
+        with st.chat_message("assistant", avatar="🎯"):
+            st.markdown(turn.assistant)
+
+            # Attach metadata only to the last turn
+            if i == len(turns) - 1 and last_docs:
+                _render_answer_meta(last_docs, last_latency, settings)
 
 
-def render_query_input(state: dict) -> str | None:
-    """Render the query input row and return the submitted question or None."""
-    kb_ready = state.get("vector_store") is not None
-
-    placeholder = (
-        "Ask a question about your documents…"
-        if kb_ready
-        else "Build the knowledge base first to enable querying…"
-    )
-
-    with st.form(key="query_form", clear_on_submit=True):
-        col_input, col_btn = st.columns([5, 1])
-        with col_input:
-            question = st.text_input(
-                "Query",
-                placeholder=placeholder,
-                disabled=not kb_ready,
-                label_visibility="collapsed",
-            )
-        with col_btn:
-            submitted = st.form_submit_button(
-                "Send",
-                type="primary",
-                disabled=not kb_ready,
-                use_container_width=True,
-            )
-
-    if submitted and question.strip():
-        return question.strip()
-    return None
-
-
-def render_answer_card(answer: str, docs: list, latency: float, settings: dict) -> None:
-    """Render the latest answer with sources and context.
-
-    Args:
-        answer: The LLM-generated answer string.
-        docs: Retrieved LangChain Document objects.
-        latency: Response generation time in seconds.
-        settings: UI settings dict (show_context, show_sources).
-    """
-    # Latest answer display
+def _render_answer_meta(docs: list, latency: float, settings: dict) -> None:
+    """Render latency, sources, and context expander below an answer."""
     st.markdown(
-        f"""
-        <div class="assistant-message" style="margin-bottom:1rem;">
-            <div class="message-label">Assistant</div>
-            {answer.replace(chr(10), "<br>")}
-            <div class="latency-info">⏱ {latency:.2f}s</div>
-        </div>
-        """,
+        f'<span class="latency-tag">⏱ {latency:.2f}s &nbsp;·&nbsp; {len(docs)} chunks retrieved</span>',
         unsafe_allow_html=True,
     )
 
-    # Sources
     if settings.get("show_sources") and docs:
         sources = unique_sources(docs)
-        st.markdown(
-            "**Sources:** " + " &nbsp;·&nbsp; ".join(f"`{s}`" for s in sources),
-            unsafe_allow_html=True,
-        )
+        st.caption("**Sources:** " + " · ".join(f"`{s}`" for s in sources))
 
-    # Retrieved context expander
     if settings.get("show_context") and docs:
-        with st.expander(f"📄 Retrieved Context ({len(docs)} chunk(s))", expanded=False):
+        with st.expander(f"📄 Retrieved Context ({len(docs)} chunks)", expanded=False):
             for i, doc in enumerate(docs, 1):
                 source = doc.metadata.get("source", "Unknown")
-                chunk_idx = doc.metadata.get("chunk_index", "?")
+                chunk = doc.metadata.get("chunk_index", "?")
                 excerpt = truncate(doc.page_content.strip(), 400)
                 st.markdown(
                     f"""
                     <div class="source-card">
-                        <div class="source-name">📌 [{i}] {source} &nbsp;·&nbsp; chunk {chunk_idx}</div>
-                        <div class="source-excerpt">{excerpt}</div>
+                        <div class="source-title">📌 [{i}] {source} · chunk {chunk}</div>
+                        <div class="source-text">{excerpt}</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
 
 
-def render_action_buttons(state: dict) -> None:
-    """Render action buttons below the chat (clear history, etc.)."""
-    col1, col2, col3 = st.columns([1, 1, 4])
+# ── Empty / welcome state ────────────────────────────────────────────────────
 
-    with col1:
-        if st.button("🗑️ Clear Chat", help="Clear conversation history"):
-            state["action"] = "clear_chat"
+def render_welcome() -> None:
+    """Show onboarding card when no KB is built yet."""
+    st.markdown(
+        """
+        <div class="welcome-card">
+            <div class="icon">🗂️</div>
+            <h3>No knowledge base yet</h3>
+            <p>Upload your documents in the sidebar, choose your Vector DB and Embedding model, then click <strong>⚡ Build KB</strong>.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with col2:
-        if st.button("📋 Copy Last", help="Copy the last answer to clipboard (manual)"):
-            last = state.get("last_answer", "")
-            st.code(last, language=None)
+    col1, col2, col3 = st.columns(3)
+    _step_card(col1, "1️⃣", "Upload", "PDF, DOCX, TXT, or Markdown files via the sidebar")
+    _step_card(col2, "2️⃣", "Build KB", "Index documents into your chosen vector database")
+    _step_card(col3, "3️⃣", "Ask", "Ask questions in natural language and get grounded answers")
+
+
+def _step_card(col, icon: str, title: str, desc: str) -> None:
+    with col:
+        st.markdown(
+            f"""
+            <div style="background:#1e293b; border:1px solid #334155; border-radius:12px;
+                        padding:1rem; text-align:center; height:130px;">
+                <div style="font-size:1.5rem;">{icon}</div>
+                <div style="color:#38bdf8; font-weight:700; font-size:0.85rem; margin:0.3rem 0;">{title}</div>
+                <div style="color:#64748b; font-size:0.75rem; line-height:1.4;">{desc}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+# ── Query suggestions ────────────────────────────────────────────────────────
+
+SAMPLE_QUESTIONS = [
+    "What are the key principles of tactical operations?",
+    "How do I establish an observation post?",
+    "What does a SALUTE report contain?",
+    "What are the best practices for knowledge management?",
+]
+
+
+def render_suggestions() -> str | None:
+    """Show example query buttons. Returns the selected question or None."""
+    st.markdown(
+        '<div class="suggestion-label">💡 Try asking…</div>',
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(2)
+    for i, q in enumerate(SAMPLE_QUESTIONS):
+        with cols[i % 2]:
+            if st.button(q, key=f"suggestion_{i}", use_container_width=True):
+                return q
+    return None
+
+
+# ── Export chat ──────────────────────────────────────────────────────────────
+
+def build_chat_export(chat_history_obj) -> str:
+    """Convert chat history to a downloadable Markdown string."""
+    lines = [
+        "# Tactical Knowledge Assistant — Chat Export",
+        f"*Exported on {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n",
+        "---\n",
+    ]
+    for i, turn in enumerate(chat_history_obj, 1):
+        lines.append(f"**[{i}] You:** {turn.human}\n")
+        lines.append(f"**Assistant:** {turn.assistant}\n")
+        lines.append("---\n")
+    return "\n".join(lines)

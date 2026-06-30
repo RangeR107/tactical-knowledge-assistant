@@ -6,6 +6,8 @@ Run with:
 """
 
 import os
+import time
+
 import streamlit as st
 
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")  # suppress chromadb telemetry
@@ -18,19 +20,24 @@ from app.logger import logger
 from app.rag_chain import RAGChain
 from app.vector_store import (
     DEFAULT_STORE_TYPE,
-    any_store_exists,
     build_vector_store,
     delete_vector_store,
     get_store_stats,
     load_vector_store,
     store_exists,
 )
+from ui.chat import (
+    _render_answer_meta,
+    build_chat_export,
+    render_chat_history,
+    render_suggestions,
+    render_welcome,
+)
 from ui.sidebar import render_sidebar
-from ui.chat import render_answer_card, render_action_buttons, render_chat_history, render_query_input
 from ui.styles import CUSTOM_CSS
 
 
-# ── Page configuration ────────────────────────────────────────────────────────
+# ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
     page_title=config.ui["page_title"],
@@ -41,7 +48,7 @@ st.set_page_config(
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
-# ── Session state initialisation ──────────────────────────────────────────────
+# ── Session state ─────────────────────────────────────────────────────────────
 
 def _init_state() -> None:
     defaults: dict = {
@@ -50,6 +57,7 @@ def _init_state() -> None:
         "chat_history_obj": ChatHistory(),
         "pending_docs": [],
         "loaded_file_names": set(),
+        "indexed_files": [],
         "documents_loaded": False,
         "kb_stats": {},
         "last_answer": "",
@@ -70,7 +78,7 @@ def _init_state() -> None:
         if key not in st.session_state:
             st.session_state[key] = val
 
-    # Auto-load persisted vector store on startup
+    # Auto-load persisted store on startup
     if st.session_state["vector_store"] is None:
         s = st.session_state["settings"]
         vdb = s.get("vector_db", DEFAULT_STORE_TYPE)
@@ -100,7 +108,7 @@ def _make_chain(vs) -> RAGChain:
 _init_state()
 
 
-# ── Action handler ────────────────────────────────────────────────────────────
+# ── Actions ───────────────────────────────────────────────────────────────────
 
 def handle_actions() -> None:
     action = st.session_state.get("action")
@@ -112,8 +120,6 @@ def handle_actions() -> None:
         _build_knowledge_base()
     elif action == "reset_kb":
         _reset_knowledge_base()
-    elif action == "clear_chat":
-        _clear_chat()
 
 
 def _build_knowledge_base() -> None:
@@ -126,25 +132,23 @@ def _build_knowledge_base() -> None:
     vdb = s.get("vector_db", DEFAULT_STORE_TYPE)
     emb = s.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
 
-    chunk_count_estimate = len(pending) * 8  # rough estimate
-    time_estimate = max(1, chunk_count_estimate // 50)
+    chunk_estimate = len(pending) * 8
+    time_estimate = max(1, chunk_estimate // 50)
+    st.info(
+        f"⏳ Indexing with **{vdb.upper()}** + `{emb.split('/')[-1]}` "
+        f"— ~{time_estimate} minute(s) for large docs."
+    )
 
-    st.info(f"⏳ Embedding and indexing documents using **{vdb.upper()}** + `{emb.split('/')[-1]}`.\nThis may take ~{time_estimate} minute(s) for large documents.")
-
-    progress = st.progress(0.0, text="Chunking documents…")
-
+    progress = st.progress(0.0, text="Chunking…")
     try:
         chunks = chunk_documents(pending)
-        progress.progress(0.05, text=f"Created {len(chunks)} chunks — starting embedding…")
-
-        def on_progress(frac: float, msg: str) -> None:
-            progress.progress(frac, text=msg)
+        progress.progress(0.05, text=f"Created {len(chunks)} chunks — embedding…")
 
         vs = build_vector_store(
             chunks,
             store_type=vdb,
             embedding_model=emb,
-            progress_callback=on_progress,
+            progress_callback=lambda frac, msg: progress.progress(frac, text=msg),
         )
 
         progress.progress(1.0, text="✅ Done!")
@@ -153,16 +157,17 @@ def _build_knowledge_base() -> None:
         st.session_state["vector_store"] = vs
         st.session_state["rag_chain"] = _make_chain(vs)
         st.session_state["kb_stats"] = get_store_stats(vs, vdb)
+        st.session_state["indexed_files"] = sorted(st.session_state.get("loaded_file_names", set()))
         st.session_state["pending_docs"] = []
 
         n = st.session_state["kb_stats"].get("total_vectors", 0)
-        st.success(f"✅ Knowledge base built — {n} vectors indexed ({vdb.upper()}).")
+        st.success(f"✅ KB built — {n} vectors indexed ({vdb.upper()}).")
         logger.info(f"KB built: {n} vectors, backend={vdb}, embedding={emb}")
         st.rerun()
 
     except Exception as exc:
         progress.empty()
-        st.error(f"Failed to build knowledge base: {exc}")
+        st.error(f"Failed to build KB: {exc}")
         logger.error(f"KB build failed: {exc}", exc_info=True)
 
 
@@ -172,9 +177,15 @@ def _reset_knowledge_base() -> None:
         vdb = s.get("vector_db", DEFAULT_STORE_TYPE)
         delete_vector_store(vdb)
         st.session_state.update({
-            "vector_store": None, "rag_chain": None, "kb_stats": {},
-            "pending_docs": [], "loaded_file_names": set(),
-            "documents_loaded": False, "last_answer": "", "last_docs": [],
+            "vector_store": None,
+            "rag_chain": None,
+            "kb_stats": {},
+            "pending_docs": [],
+            "loaded_file_names": set(),
+            "indexed_files": [],
+            "documents_loaded": False,
+            "last_answer": "",
+            "last_docs": [],
         })
         st.session_state["chat_history_obj"].clear()
         st.success("🗑️ Knowledge base reset.")
@@ -184,99 +195,121 @@ def _reset_knowledge_base() -> None:
         st.error(f"Failed to reset: {exc}")
 
 
-def _clear_chat() -> None:
-    st.session_state["chat_history_obj"].clear()
-    st.session_state["last_answer"] = ""
-    st.session_state["last_docs"] = []
-    st.rerun()
+# ── Streaming query ───────────────────────────────────────────────────────────
 
-
-# ── Query handler ─────────────────────────────────────────────────────────────
-
-def handle_query(question: str) -> None:
-    rag: RAGChain | None = st.session_state.get("rag_chain")
+def _handle_stream_query(question: str) -> None:
+    state = st.session_state
+    rag: RAGChain | None = state.get("rag_chain")
     if rag is None:
-        # Rebuild chain in case model/temperature changed
-        vs = st.session_state.get("vector_store")
+        vs = state.get("vector_store")
         if vs is None:
             st.error("Knowledge base not ready. Build it first.")
             return
         rag = _make_chain(vs)
-        st.session_state["rag_chain"] = rag
+        state["rag_chain"] = rag
 
-    history: ChatHistory = st.session_state["chat_history_obj"]
+    history: ChatHistory = state["chat_history_obj"]
+    settings: dict = state["settings"]
 
-    with st.spinner("Thinking…"):
+    with st.chat_message("user", avatar="👤"):
+        st.markdown(question)
+
+    with st.chat_message("assistant", avatar="🎯"):
         try:
-            result = rag.run(question=question, chat_history=history.as_list())
-            answer = result["answer"]
-            docs = result["source_documents"]
-            latency = result["latency_seconds"]
-
-            history.add(human=question, assistant=answer)
-            st.session_state.update({
-                "last_answer": answer,
-                "last_latency": latency,
-                "last_docs": docs,
-            })
-            logger.info(f"Query answered in {latency:.2f}s")
-            st.rerun()
+            start = time.perf_counter()
+            retrieved_docs, token_gen = rag.stream(
+                question, chat_history=history.as_list()
+            )
+            answer = st.write_stream(token_gen)
+            latency = time.perf_counter() - start
+            _render_answer_meta(retrieved_docs, latency, settings)
         except Exception as exc:
+            answer = ""
+            retrieved_docs = []
+            latency = 0.0
             st.error(f"Error generating response: {exc}")
-            logger.error(f"Query failed: {exc}", exc_info=True)
+            logger.error(f"Stream query failed: {exc}", exc_info=True)
+
+    if answer:
+        history.add(human=question, assistant=str(answer))
+        state.update({
+            "last_answer": str(answer),
+            "last_latency": latency,
+            "last_docs": retrieved_docs,
+        })
+        logger.info(f"Query answered in {latency:.2f}s")
 
 
 # ── Main layout ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    render_sidebar(st.session_state)
+    state = st.session_state
+    render_sidebar(state)
     handle_actions()
 
-    # ── Header ────────────────────────────────────────────────────────────
+    # ── Header ────────────────────────────────────────────────────────────────
     st.markdown(
         """
         <div class="main-header">
             <h1>🎯 Tactical Knowledge Assistant</h1>
-            <p>Fully offline AI assistant powered by local SLM + RAG • Upload documents and ask questions</p>
+            <p>Fully offline AI assistant powered by local LLM + RAG</p>
+            <span class="header-badge">🔒 Offline</span>
+            <span class="header-badge">⚡ Local LLM</span>
+            <span class="header-badge">🗂️ RAG</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if st.session_state["vector_store"] is None:
-        st.info(
-            "👋 **Getting started:** Upload documents in the sidebar → select your Vector DB & Embedding model → click **⚡ Build KB** → ask questions below."
+    history: ChatHistory = state["chat_history_obj"]
+    kb_ready: bool = state["vector_store"] is not None
+    settings: dict = state["settings"]
+
+    # Consume pending question from suggestion click (set in previous rerun)
+    pending_q: str | None = state.pop("pending_question", None)
+
+    # ── Main content area ─────────────────────────────────────────────────────
+    if len(history) > 0:
+        render_chat_history(
+            history,
+            settings,
+            state.get("last_docs", []),
+            state.get("last_latency", 0.0),
         )
+    elif kb_ready and not pending_q:
+        # KB ready but no chat yet — show suggestion chips
+        clicked = render_suggestions()
+        if clicked:
+            state["pending_question"] = clicked
+            st.rerun()
+    elif not kb_ready:
+        render_welcome()
 
-    st.divider()
+    # ── Chat input ────────────────────────────────────────────────────────────
+    typed_q: str | None = None
+    if kb_ready:
+        typed_q = st.chat_input("Ask a question about your documents…")
+    elif not kb_ready and len(history) == 0:
+        pass  # welcome card already shown, no input needed
+    else:
+        st.info("Build a knowledge base first — upload documents and click **⚡ Build KB** in the sidebar.")
 
-    render_chat_history(st.session_state["chat_history_obj"])
+    question = typed_q or pending_q
 
-    last_answer = st.session_state.get("last_answer", "")
-    last_docs = st.session_state.get("last_docs", [])
-    last_latency = st.session_state.get("last_latency", 0.0)
-
-    if last_answer:
-        st.divider()
-        st.markdown("#### Latest Response")
-        render_answer_card(
-            answer=last_answer,
-            docs=last_docs,
-            latency=last_latency,
-            settings=st.session_state.get("settings", {}),
-        )
-
-    st.divider()
-
-    question = render_query_input(st.session_state)
     if question:
-        handle_query(question)
+        if kb_ready:
+            _handle_stream_query(question)
+        else:
+            st.warning("Build a knowledge base first!")
 
-    render_action_buttons(st.session_state)
-
-    if st.session_state.get("action") == "clear_chat":
-        st.session_state["action"] = None
-        _clear_chat()
+    # ── Toolbar (shown when there's chat history) ─────────────────────────────
+    if len(history) > 0:
+        col1, col2 = st.columns([1, 5])
+        with col1:
+            if st.button("🗑️ Clear Chat", use_container_width=True):
+                history.clear()
+                state.update({"last_answer": "", "last_docs": [], "last_latency": 0.0})
+                st.rerun()
 
 
 if __name__ == "__main__":
