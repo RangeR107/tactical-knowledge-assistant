@@ -1,6 +1,4 @@
-"""Local embedding model using SentenceTransformers via LangChain."""
-
-from functools import lru_cache
+"""Local embedding models using SentenceTransformers via LangChain."""
 
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -8,26 +6,38 @@ from app.config import config
 from app.logger import logger
 
 
-@lru_cache(maxsize=1)
-def get_embedding_model() -> HuggingFaceEmbeddings:
-    """Return a cached HuggingFaceEmbeddings instance (SentenceTransformers under the hood).
+# All available embedding models shown in the UI
+AVAILABLE_EMBEDDING_MODELS: dict[str, str] = {
+    "all-MiniLM-L6-v2":        "all-MiniLM-L6-v2  — fast & lightweight (384 dim)",
+    "BAAI/bge-small-en-v1.5":  "BGE-small-en-v1.5 — balanced speed/quality (384 dim)",
+    "BAAI/bge-base-en-v1.5":   "BGE-base-en-v1.5  — high quality (768 dim)",
+    "all-mpnet-base-v2":       "all-mpnet-base-v2 — strong semantic search (768 dim)",
+}
 
-    The model is downloaded on first call and cached for the process lifetime.
+DEFAULT_EMBEDDING_MODEL = config.embeddings.get("model", "all-MiniLM-L6-v2")
+
+# Module-level cache keyed by model name
+_model_cache: dict[str, HuggingFaceEmbeddings] = {}
+
+
+def get_embedding_model(model_name: str | None = None) -> HuggingFaceEmbeddings:
+    """Return a cached HuggingFaceEmbeddings instance for the given model.
+
+    Args:
+        model_name: HuggingFace model name/path. Defaults to config value.
     """
-    emb_cfg = config.embeddings
-    model_name = emb_cfg["model"]
-    device = emb_cfg.get("device", "cpu")
+    if model_name is None:
+        model_name = DEFAULT_EMBEDDING_MODEL
 
-    logger.info(f"Loading embedding model '{model_name}' on device '{device}'")
+    if model_name not in _model_cache:
+        device = config.embeddings.get("device", "cpu")
+        logger.info(f"Loading embedding model '{model_name}' on device '{device}'")
 
-    model_kwargs = {"device": device}
-    encode_kwargs = {"normalize_embeddings": True}  # cosine similarity
+        _model_cache[model_name] = HuggingFaceEmbeddings(
+            model_name=model_name,
+            model_kwargs={"device": device},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+        logger.info(f"Embedding model '{model_name}' loaded successfully")
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name=model_name,
-        model_kwargs=model_kwargs,
-        encode_kwargs=encode_kwargs,
-    )
-
-    logger.info(f"Embedding model '{model_name}' loaded successfully")
-    return embeddings
+    return _model_cache[model_name]

@@ -1,6 +1,7 @@
 """Retrieval logic wrapping the FAISS vector store."""
 
-from langchain_community.vectorstores import FAISS
+from typing import Any
+
 from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStoreRetriever
 
@@ -8,29 +9,26 @@ from app.config import config
 from app.logger import logger
 
 
-def get_retriever(store: FAISS) -> VectorStoreRetriever:
-    """Create a LangChain retriever from a FAISS vector store.
+def get_retriever(store: Any, top_k: int | None = None) -> VectorStoreRetriever:
+    """Create a LangChain retriever from any supported vector store.
 
     Args:
-        store: FAISS vector store instance.
+        store: Vector store instance (FAISS, Chroma, or Qdrant).
+        top_k: Number of chunks to retrieve. Defaults to config value.
 
     Returns:
-        A LangChain VectorStoreRetriever configured from config.yaml.
+        A LangChain VectorStoreRetriever.
     """
-    ret_cfg = config.retrieval
-    top_k = ret_cfg.get("top_k", 5)
-
-    # Use plain similarity search — score_threshold is omitted because FAISS
-    # returns L2 distances that are not comparable to a cosine-similarity threshold.
+    k = top_k or config.retrieval.get("top_k", 5)
     retriever = store.as_retriever(
         search_type="similarity",
-        search_kwargs={"k": top_k},
+        search_kwargs={"k": k},
     )
-    logger.debug(f"Retriever configured: top_k={top_k}, search_type=similarity")
+    logger.debug(f"Retriever configured: top_k={k}")
     return retriever
 
 
-def retrieve_relevant_docs(store: FAISS, query: str) -> list[Document]:
+def retrieve_relevant_docs(store: Any, query: str) -> list[Document]:
     """Directly retrieve the most relevant document chunks for a query.
 
     Args:
